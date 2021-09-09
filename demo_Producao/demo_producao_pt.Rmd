@@ -1,0 +1,343 @@
+---
+title: "Demo Produção"
+author: Felipe de S N Coelho
+output:
+  html_notebook: 
+    fig_width: 20
+    fig_height: 20
+    fig_caption: yes
+    toc: yes
+    theme: cerulean
+    highlight: kate
+    number_sections: yes
+  pdf_document:
+    toc: yes
+---
+
+<!-- This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code.  -->
+
+<!-- Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*.  -->
+
+<!-- Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*. -->
+
+<!-- When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file). -->
+
+<!-- The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed. -->
+
+# Início
+
+Bibliotecas necessárias:
+
+```{r}
+# install.packages("tidyverse")
+# install.packages("fmsb")
+# install.packages("readxl")
+
+library(tidyverse)
+library(readxl)
+library(fmsb)
+```
+
+***
+# Base de dados
+
+Base de dados "produção.xls" utilizada em aula:  
+
+```{r echo=TRUE}
+df_prod <- read_excel("C:/Users/HP/Documents/R/bases/producao.xls", sheet = "Plan1")
+
+df_prod
+```
+Dataset tipo *tibble* com 146 linhas (ie., observações) e 9 colunas (ie., variáveis).
+
+***
+# Preparação dos dados
+
+## Inspeção básica
+
+Comando **head**(df) mostra as primeiras 5 linhas:
+
+```{r echo=TRUE}
+head(df_prod)
+```
+> *df* refere-se a um *data frame* de modo geral.
+
+O comando **tail**(df) mostra as últimas 5 linhas:
+
+```{r echo=TRUE}
+tail(df_prod) # show last 5
+```
+
+O comando **names**(df) retorna um array de strings contendo o nome de cabeçalho de cada variável, ie. coluna:
+
+```{r echo=TRUE}
+names(df_prod)
+```
+Assim, temos uma visão geral das variáveis presentes.
+
+O comando **summary**(df) nos fornece algumas informações sobre a base de dados e uma noção estatística dos valores.
+
+```{r echo=TRUE}
+summary(df_prod)
+```
+
+## Edições necessárias
+
+### Eliminando espaços
+Trabalhando com R, devemos eliminar os espaços " " entre palavras nos nomes das colunas.
+Neste caso, substituiremos com "_":
+
+```{r echo=TRUE}
+colnames(df_prod) <- names(df_prod) %>%
+    str_replace_all(c(" " = "_"))
+
+names(df_prod)
+```
+
+### Separando datas e hora
+Numa base de dados, muitas vezes temos apenas uma coluna, ou duas, contendo informações de data e hora de cada observação.
+Tendo data com dia, mês e ano (não necessariamnte nesta ordem) será conveniente separarmos cada informação e, ainda, obter o dia da semana de cada observação para fins de análise.
+
+Para isso, primeiro definimos o formato da data tal como consta em df_prod$Data_Ocorrência, neste caso, *ano-mês-dia*:
+
+```{r echo=TRUE}
+ymd <- "([0-9]{4})[-]([0-9]{2})[-]([0-9]{2})" # pattern yyyy-mm-dd
+```
+
+O padrão definido em *ymd* será então passado a um método (ou função) de comparação de strings.
+O método **str_match**() encarregar-se-á de particionar a string contendo a data.
+E o resultado será guardado em um novo df contendo os dados originais na primeira coluna e, nas colunas subsequêntes, as respectivas partições respeitando o padrão definido em *ymd*.
+
+```{r echo=TRUE}
+df_dates <- as.data.frame(str_match(df_prod$Data_Ocorrência, ymd))
+
+colnames(df_dates) <- c("Data", "Ano", "Mes", "Dia")
+
+head(df_dates)
+```
+
+Podemos ainda determinar o dia da semana como segue:
+
+```{r echo=TRUE}
+# converte datas em formato strings para um formato apropriado
+x_datas <- as.Date(df_dates$Data) 
+
+# define um df contendo o dia da semana abreviado
+Dia_semana <- weekdays(x_datas, abbreviate = TRUE)
+df_dates <- df_dates %>%
+  mutate(as.data.frame(Dia_semana))
+
+head(df_dates)
+```
+
+Para facilitar a correta ordem dos dias da semana nos plots, podemos mapear os dias da semana com uma numeração conveniente como '01' para domingo (Sun), '02' para segunda (Mon), e assim por diante. 
+
+```{r echo=TRUE}
+df_dates <- df_dates %>%
+    mutate(Dia_n = case_when(Dia_semana == "Sun" ~ "01",
+                             Dia_semana == "Mon" ~ "02",
+                             Dia_semana == "Tue" ~ "03",
+                             Dia_semana == "Wed" ~ "04",
+                             Dia_semana == "Thu" ~ "05",
+                             Dia_semana == "Fri" ~ "06",
+                             Dia_semana == "Sat" ~ "07",
+                             TRUE ~ "00" # para qualquer outro valor
+                             )
+           )
+
+head(df_dates)
+```
+
+Agora podemos acrescentar os novos dados referentes à data e dia, dispensando a coluna original 'Data_Ocorrência' pois esta não será mais necessária.
+
+```{r echo=TRUE}
+df_new <- df_prod %>%
+    # add new cols
+    mutate(df_dates) %>%
+    # drop existing col
+    select(-Data_Ocorrência)
+
+head(df_new)
+```
+
+# Visualização de dados
+
+A partir das questões dadas em aula, podemos realizar a visualização dos dados por gráficos.
+Gráficos são recursos que podem auxiliar muito na análise e interpretação dos dados antes da tomada de decisão, sem necessidade de ferramentas muito sofisticadas de Data Mining.
+
+Utilizei apenas gráficos de colunas por conveniência.
+
+## Questões
+
+### Qual o tipo de falha mais comum antes das 12h X depois das 12h?
+
+```{r echo=TRUE}
+p1a <- ggplot(df_new, aes(x=Hora,
+                          fill=Tipo_problema)) +
+    geom_bar(position = "stack") +
+    # edit titles and labels
+    labs(x = "Hora",
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Hora do dia",
+         subtitle = "Discriminado por Tipo de Falha") +
+    guides(fill = guide_legend(title = "Tipo de Falha")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p1a)
+```
+
+```{r echo=TRUE}
+p1b <- ggplot(df_new, aes(x=Hora,
+                          fill=Setor)) +
+    geom_bar(position = "stack") +
+    # edit titles and labels
+    labs(x = "Hora", 
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Hora",
+         subtitle = "Discriminado por Setor") +
+    guides(fill = guide_legend(title = "Setor")) +
+    theme(legend.position = "top")  +
+    # edit chart box and labels
+    theme_bw()
+
+show(p1b)
+```
+
+### Encontrar relação entre dia da semana X tipo de falha.
+
+O gráfico abaixo nos mostra que:
+
+1. Domingo, terças- e quintas-feiras são os dias em que ocorrem mais falhas, seguido por sextas-feiras e sábados;
+2. E falhas devido ao travamento da entrada ocorrem todos os dias.
+
+```{r echo=TRUE}
+p2a <- ggplot(df_new, aes(x=Dia_n,
+                          fill=Tipo_problema)) +
+    geom_bar(position = "stack") +
+    # edit titles and labels
+    labs(x = "Dia da semana (dom =: 01, seg =: 01, ..., sáb =: 07)", 
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Dia da semana",
+         subtitle = "Discriminado por Tipo de Falha.") +
+    guides(fill = guide_legend(title = "Tipo de Falha")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p2a)
+```
+
+Entretanto, se levarmos em consideração as informações de dia, mês e ano, podemos ter uma visão melhor sobre a ocorrência de falhas, como mostra o gráfico abaixo:
+
+```{r echo=TRUE}
+p2b <- ggplot(df_new, aes(x=Dia_n,
+                         fill=Tipo_problema)) +
+    geom_bar(position = "stack") +
+    facet_grid(vars(Mes), vars(Ano)) +
+    # edit titles and labels
+    labs(x = "Dia da semana (dom =: 01, seg =: 01, ..., sáb =: 07)", 
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Dia da semana",
+         subtitle = "Discriminado por Tipo de Falha Ano, e Mês.") +
+    guides(fill = guide_legend(title = "Tipo de Falha")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p2b)
+```
+
+> É claro que, num caso real onde muito mais dados são coletados, dificilmente teríamos meses e anos tão *tranquilos*, como em 2000 e 2003, a menos que os devidos dados não eram coletados até 2004, mas isso também não explica o caso de 2007 o qual deveria, muito provavelmente, apresentar mais ocorrências de falhas.
+
+### Encontrar relação entre dia da semana X setor
+
+```{r echo=TRUE}
+p3 <- ggplot(df_new, aes(x=Dia_n,
+                         fill=Setor)) +
+    geom_bar(position = "stack") +
+    facet_grid(vars(Mes), vars(Ano)) +
+    # edit titles and labels
+    labs(x = "Dia da semana (dom =: 01, seg =: 01, ..., sáb =: 07)", 
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Dia da semana",
+         subtitle = "Discriminado por Setor, Ano e Mês (linhas)." ) +
+    guides(fill = guide_legend(title = "Setor")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p3)
+```
+
+### Encontrar relação entre dia da semana x operador
+
+```{r echo=TRUE}
+p4 <- ggplot(df_new, aes(x=Dia_n,
+                        fill=Operador)) +
+    geom_bar(position = "stack") +
+    facet_grid(vars(Mes), vars(Ano)) +
+    # edit titles and labels
+    labs(x = "Dia da semana (dom := 01, seg := 01, ..., sáb:= 07)", 
+         y = "N# de Ocorrências",
+         title ="Qtd. Falhas vs. Dia da semana",
+         subtitle = "Discriminado por Operador, Ano e Mês.") +
+    guides(fill = guide_legend(title = "Operador")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p4)
+```
+
+### Qual o tipo de falha que deixa mais tempo a produção parada
+
+```{r echo=TRUE}
+p5a <- ggplot(df_new, aes(x=Horas_Paradas,
+                          y=Tipo_problema,
+                          fill=Máquina)) +
+  geom_col(position = "stack") +
+  facet_grid(vars(Ano)) +
+  # edit titles and labels
+  labs(x = "Horas paradas", 
+       y = "Tipo da Falha",
+       title ="Tipo de Falha vs. Horas paradas",
+       subtitle = "Discriminado por Máquina.") +
+  guides(fill = guide_legend(title = "Máquina")) +
+  theme(legend.position = "top") +
+  # edit chart box and labels
+  theme_bw()
+
+show(p5a)
+```
+
+```{r echo=TRUE}
+p5b <- ggplot(df_new, aes(x=Horas_Paradas,
+                         y=Tipo_problema,
+                         fill=Operador)) +
+    geom_col(position = "stack") +
+    facet_grid(vars(Ano)) +
+    # edit titles and labels
+    labs(x = "Horas paradas", 
+         y = "Tipo da Falha",
+         title ="Tipo de Falha vs. Horas paradas",
+         subtitle = "Discriminado por Operador, Ano e Mês.") +
+    guides(fill = guide_legend(title = "Operador")) +
+    theme(legend.position = "top") +
+    # edit chart box and labels
+    theme_bw()
+
+show(p5b)
+```
+
+# Conclusão
+
+1. Não precisamos demitir Rudinei,
+2. Mas talvez João Maria, José Carlos e Menezes. 
+3. 2004 foi um ano difícil!
+
+Brincadeira ;-)
+
+# Remarks
+Este caderno foi gerado utilizando [R Markdown](http://rmarkdown.rstudio.com).
