@@ -1,4 +1,4 @@
-# data_science_portfolio
+# data_science_stuff
 Repositório para meus trabalhos, exercícios, tutoriais em Ciência de Dados.
 
-Repository for my works, exercises, tutorials in Data Science.
+Repository for my developments, exercises, tutorials in Data Science.
